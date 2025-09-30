@@ -25,8 +25,17 @@
 package com.raylib.raymob;  // Don't change the package name (see gradle.properties)
 
 import android.app.NativeActivity;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.view.KeyEvent;
 import android.os.Bundle;
+
+import androidx.annotation.NonNull;
+
+import com.pmus.tillua.BuildConfig;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class NativeLoader extends NativeActivity {
 
@@ -59,11 +68,84 @@ public class NativeLoader extends NativeActivity {
         return super.onKeyDown(keyCode, event);
     }
 
+    private native void setmediJNI(boolean granted);
+    private native void setnotifJNI(boolean granted);
+
     @Override
     protected void onStart() {
         super.onStart();
-        if(initCallback) {
+
+        List<String> permissionsToRequest = new ArrayList<>();
+
+        boolean mediaG;
+        boolean notificationG;
+
+        // Check audio/media permission
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) { // Android 13+
+            mediaG = checkSelfPermission(android.Manifest.permission.READ_MEDIA_AUDIO)
+                    == PackageManager.PERMISSION_GRANTED;
+            if (!mediaG) {
+                permissionsToRequest.add(android.Manifest.permission.READ_MEDIA_AUDIO);
+            }
+        } else { // Android 12 and below
+            mediaG = checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                    == PackageManager.PERMISSION_GRANTED;
+            if (!mediaG) {
+                permissionsToRequest.add(android.Manifest.permission.READ_EXTERNAL_STORAGE);
+            }
+        }
+
+        // Check POST_NOTIFICATIONS permission (Android 13+ only)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notificationG = checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                    == PackageManager.PERMISSION_GRANTED;
+            if (!notificationG) {
+                permissionsToRequest.add(android.Manifest.permission.POST_NOTIFICATIONS);
+            }
+        } else {
+            notificationG = true; // no runtime permission needed below Android 13
+        }
+
+        if (!permissionsToRequest.isEmpty()) {
+            requestPermissions(
+                    permissionsToRequest.toArray(new String[0]),
+                    1000
+            );
+        }
+
+        setmediJNI(mediaG);
+        setnotifJNI(notificationG);
+
+        if (mediaG && notificationG && initCallback) {
             onAppStart();
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode == 1000) {
+            boolean mediaG = false;
+            boolean notificationG = false;
+
+            for (int i = 0; i < permissions.length; i++) {
+                String perm = permissions[i];
+                boolean granted = grantResults[i] == PackageManager.PERMISSION_GRANTED;
+
+                if (perm.equals(android.Manifest.permission.READ_MEDIA_AUDIO) ||
+                        perm.equals(android.Manifest.permission.READ_EXTERNAL_STORAGE)) {
+                    mediaG = granted;
+                    setmediJNI(granted);
+                } else if (perm.equals(android.Manifest.permission.POST_NOTIFICATIONS)) {
+                    notificationG = granted;
+                    setnotifJNI(granted);
+                }
+            }
+
+            if (initCallback) {
+                onAppStart();
+            }
         }
     }
 
